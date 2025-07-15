@@ -28,6 +28,15 @@ class LayerNorm(nn.Module):
         std = x.std(dim = -1, keepdim = True)
 
         return self.gamma * (x - mean)/(std + self.eps) + self.beta 
+    
+
+class ResidualConnection(nn.Module):
+    def __init__(self, d_model: int, eps: float):
+        super().__init__()
+        self.layernorm = LayerNorm(d_model, eps)
+
+    def forward(self, x, sublayer):
+        return x + self.norm(sublayer(x))
 
 
 class Feed_Forward(nn.Module):
