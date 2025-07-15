@@ -16,6 +16,18 @@ class Embedding_Block(nn.Module):
         pos_ids = torch.arange(start = 0, end = seq_len, device = x.device).unsqueeze(0)
         return self.token_embedding(x) + self.positional_embedding(pos_ids)
 
+class LayerNorm(nn.Module): 
+    def __init__(self, d_model: int, eps: float):
+        super().__init__()
+        self.eps = eps 
+        self.gamma = nn.Parameter(torch.ones(d_model))
+        self.beta = nn.Parameter(torch.zeros(d_model))
+
+    def forward(self, x: torch.Tensor):
+        mean = x.mean(dim = -1, keepdim = True)
+        std = x.std(dim = -1, keepdim = True)
+
+        return self.gamma * (x - mean)/(std + self.eps) + self.beta 
 
 
 class Feed_Forward(nn.Module):
