@@ -4,6 +4,20 @@ import torch.nn.functional as F
 import math
 
 class EmbeddingBlock(nn.Module): 
+    """
+    Implements the tokens embeddings and the positional encoding.
+
+    Parameters
+    ----------
+    d_model: int 
+        Output dimensions of the model sub-layers and embedding.
+    
+    vocab_size: int 
+        Size of the tokens dictionary.
+
+    max_len: int 
+        Maximum sequence length admitted.
+    """
     def __init__(self, d_model: int, vocab_size: int, max_len: int):
         super().__init__()
         self.d_model = d_model 
@@ -11,97 +25,26 @@ class EmbeddingBlock(nn.Module):
         self.max_len = max_len
 
         self.token_embedding = nn.Embedding(num_embeddings = self.vocab_size, embedding_dim = self.d_model)
-        self.positional_embedding = nn.Embedding(num_embeddings = self.max_len, embedding_dim = self.d_model)
+        self.positional_encoding = nn.Embedding(num_embeddings = self.max_len, embedding_dim = self.d_model)   # Learnable Positional Encoding. In the original transformer paper: Sinusoidal and constant.
 
     def forward(self, x: torch.Tensor):
+        """
+        Computes the tokens embeddings.
+        
+        Parameters
+        ----------
+        x: torch.Tensor
+            Input to be embedded
+
+        Returns
+        -------
+        torch.Tensor
+            The tokenized sentence embeddings
+        """
         seq_len = x.size(1)
         pos_ids = torch.arange(start = 0, end = seq_len, device = x.device).unsqueeze(0)
-        return self.token_embedding(x) + self.positional_embedding(pos_ids)
+        return self.token_embedding(x) + self.positional_encoding(pos_ids)
 
-
-class LayerNorm(nn.Module):
-    """
-    Layer Normalization with learnable parameters.
-
-    Parameters
-    ----------
-    d_model: int
-        Output dimensions of the model sub-layers and embedding.
-
-    eps: float 
-        Avoids dividing by 0 in the Normalization step.
-    """ 
-
-    def __init__(self, d_model: int, eps = 10**-6):
-        super().__init__()
-        self.eps = eps 
-
-        # We define the scaling and location as PyTorch trainable parameters of the model.
-        self.gamma = nn.Parameter(torch.ones(d_model))
-        self.beta = nn.Parameter(torch.zeros(d_model))
-
-    def forward(self, x: torch.Tensor):
-        """
-        Computes the Layer Normalization term. 
-
-        Parameters
-        ----------
-        x: torch.Tensor
-            Input Tensor.
-
-        Returns
-        -------
-        layernorm: torch.Tensor
-            Layer-Normalized Tensor.
-        """
-
-        # We calculate the mean and std of each sample independently.
-        mean = x.mean(dim = -1, keepdim = True)
-        std = x.std(dim = -1, keepdim = True)
-
-        layernorm = self.gamma * (x - mean)/(std + self.eps) + self.beta
-
-        return layernorm 
-    
-
-
-class ResidualConnection(nn.Module):
-    """
-    Transformers residual connection in the Add & Norm Block.
-
-    Parameters
-    ----------
-    d_model: int
-        Output dimensions of the model sub-layers and embedding.
-
-    eps: float 
-        Avoids dividing by 0 in the Normalization step.
-    """
-
-    def __init__(self, d_model: int, eps = 10**-6):
-        super().__init__()
-        self.layernorm = LayerNorm(d_model, eps)
-
-
-    def forward(self, x, sublayer):
-        """
-        Computes the residual connection by adding residual data and its layer
-        normalized expression after going through the previous sublayer block.
-
-        Parameters
-        ----------
-        x: torch.Tensor
-            Input Tensor. Before applying sublayer operations.
-
-        Returns
-        -------
-        addnorm: torch.Tensor
-            Residual connection output.
-        """
-
-        addnorm = x + sublayer(self.norm(x)) # Pre-norm improvement. In the original transformer paper: x + sublayer(x) -> LayerNorm
-
-        return addnorm
 
 
 
@@ -116,6 +59,9 @@ class FeedForward(nn.Module):
 
     d_ff: int
         Hidden layer dimension.
+
+    dropout: float
+        Probability of applying dropout to an artificial neuron.
     """
     def __init__(self, d_model: int, d_ff: int, dropout: float):
         super().__init__()
@@ -146,6 +92,8 @@ class FeedForward(nn.Module):
         return self.ff(x)
     
 
+
+
 class MultiHeadAttention(nn.Module):
     """
     Multi-Head Attention Block. 
@@ -157,8 +105,13 @@ class MultiHeadAttention(nn.Module):
 
     heads: int
         Number of attention heads.
+
+    dropout: float
+        Probability of applying dropout to an artificial neuron.
     """
-    def __init__(self, d_model: int, heads: int):
+
+    
+    def __init__(self, d_model: int, heads: int, dropout: float):
         super().__init__()
         self.d_model = d_model
         self.heads = heads
@@ -254,5 +207,92 @@ class MultiHeadAttention(nn.Module):
         V = V.view(batch_size, -1, self.num_heads, self.d_k).transpose(1, 2)
 
         attn = self.attention(self, Q, K, V, mask)
-
+ 
         return self.w_o(attn)
+    
+
+
+class LayerNorm(nn.Module):
+    """
+    Layer Normalization with learnable parameters.
+
+    Parameters
+    ----------
+    d_model: int
+        Output dimensions of the model sub-layers and embedding.
+
+    eps: float 
+        Avoids dividing by 0 in the Normalization step.
+    """ 
+
+    def __init__(self, d_model: int, eps = 10**-6):
+        super().__init__()
+        self.eps = eps 
+
+        # We define the scaling and location as PyTorch trainable parameters of the model.
+        self.gamma = nn.Parameter(torch.ones(d_model))
+        self.beta = nn.Parameter(torch.zeros(d_model))
+
+    def forward(self, x: torch.Tensor):
+        """
+        Computes the Layer Normalization term. 
+
+        Parameters
+        ----------
+        x: torch.Tensor
+            Input Tensor.
+
+        Returns
+        -------
+        layernorm: torch.Tensor
+            Layer-Normalized Tensor.
+        """
+
+        # We calculate the mean and std of each sample independently.
+        mean = x.mean(dim = -1, keepdim = True)
+        std = x.std(dim = -1, keepdim = True)
+
+        layernorm = self.gamma * (x - mean)/(std + self.eps) + self.beta
+
+        return layernorm 
+
+
+
+
+class ResidualConnection(nn.Module):
+        """
+        Transformers residual connection in the Add & Norm Block.
+
+        Parameters
+        ----------
+        d_model: int
+            Output dimensions of the model sub-layers and embedding.
+
+        eps: float 
+            Avoids dividing by 0 in the Normalization step.
+        """
+
+        def __init__(self, d_model: int, eps = 10**-6):
+            super().__init__()
+            self.layernorm = LayerNorm(d_model, eps)
+
+
+        def forward(self, x, sublayer):
+            """
+            Computes the residual connection by adding residual data and its layer
+            normalized expression after going through the previous sublayer block.
+
+            Parameters
+            ----------
+            x: torch.Tensor
+                Input Tensor. Before applying sublayer operations.
+
+            Returns
+            -------
+            addnorm: torch.Tensor
+                Residual connection output.
+            """
+
+            addnorm = x + sublayer(self.norm(x)) # Pre-norm improvement. In the original transformer paper: x + sublayer(x) -> LayerNorm
+
+            return addnorm
