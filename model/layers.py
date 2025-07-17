@@ -313,3 +313,17 @@ class ResidualConnection(nn.Module):
             addnorm = x + sublayer(self.layernorm(x)) # Pre-norm improvement. In the original transformer paper: x + sublayer(x) -> LayerNorm
 
             return addnorm
+        
+
+class EncoderLayer(nn.Module):
+    def __init__(self, d_model: int, d_ff:int, heads: int, dropout = 0.1, eps = 10**-6):
+        super().__init__()
+        self.mha = MultiHeadAttention(d_model, heads)
+        self.residual_connections = nn.ModuleList([ResidualConnection(d_model, eps) for _ in range(2)])
+        self.feed_forward = FeedForward(d_model, d_ff, dropout)
+
+    def forward(self, x: torch.Tensor, mask = None):
+        x = self.residual_connections[0](x, lambda x: self.mha(x, x, x, mask))
+        x = self.residual_connections[1](x, self.feed_forward)
+        
+        return x
