@@ -142,3 +142,51 @@ def test_feedforward_grad_flow():
         assert para.grad is not None, f"No gradients for: {name}"
         assert not torch.isnan(para.grad).any(), f"NaNs in gradients for: {name}"
         assert not torch.isinf(para.grad).any(), f"Inf in gradients for: {name}"
+
+# Residual Connection and LayerNorm Tests
+
+def test_residual_connection_output_shape():
+    """
+    Tests that the Residual Connection block returns the correct output shape 
+    given an input tensor and a FeedForward Block.
+    """
+    d_model = 64
+    d_ff = 128
+    dropout = 0.2
+    sublayer = FeedForward(d_model, d_ff, dropout)
+    rescon = ResidualConnection(d_model)
+
+    batch_size = 2
+    seq_len = 10 
+    x = torch.rand(batch_size, seq_len, d_model)
+
+    out = rescon(x, sublayer)
+
+    assert out.shape == (batch_size, seq_len, d_model), "The output dimensions of the residual connections are wrong"
+
+
+def test_residual_connection_grad_flow():
+    """
+    Tests that the Layer Normalization gradients flow correctly after 
+    applying a residual connection.
+    """
+    d_model = 64
+    d_ff = 128
+    dropout = 0.2
+    sublayer = FeedForward(d_model, d_ff, dropout)
+    rescon = ResidualConnection(d_model)
+
+    batch_size = 2
+    seq_len = 10 
+    x = torch.rand(batch_size, seq_len, d_model)
+
+    out = rescon(x, sublayer)
+
+    # An example loss function
+    loss = out.sum()
+    loss.backward()
+
+    for name, para in rescon.layernorm.named_parameters():
+        assert para.grad is not None, f"No gradients for: {name}"
+        assert not torch.isnan(para.grad).any(), f"NaNs in gradients for: {name}"
+        assert not torch.isinf(para.grad).any(), f"Inf in gradients for: {name}"

@@ -293,6 +293,6 @@ class ResidualConnection(nn.Module):
                 Residual connection output.
             """
 
-            addnorm = x + sublayer(self.norm(x)) # Pre-norm improvement. In the original transformer paper: x + sublayer(x) -> LayerNorm
+            addnorm = x + sublayer(self.layernorm(x)) # Pre-norm improvement. In the original transformer paper: x + sublayer(x) -> LayerNorm
 
             return addnorm
