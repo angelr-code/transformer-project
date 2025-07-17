@@ -98,3 +98,47 @@ def test_deterministic_embedding():
     assert torch.allclose(out1, out2)
 
 # FeedForward Tests
+
+def test_feedforward_output_shape():
+    """
+    Tests that the FeedForward block returns the correct output shape 
+    given an input tensor.
+    """
+
+    d_model = 64
+    d_ff = 128
+    dropout = 0.2
+    net = FeedForward(d_model, d_ff, dropout)
+
+    batch_size = 2
+    seq_len = 10 
+    x = torch.rand(batch_size, seq_len, d_model)
+
+    out = net(x)
+
+    assert out.shape == (batch_size, seq_len, d_model)
+
+def test_feedforward_grad_flow():
+    """
+    Ensures that the Neural Network parameters gradients flow 
+    correctly in backpropagation.
+    """
+    d_model = 64
+    d_ff = 128
+    dropout = 0.2
+    net = FeedForward(d_model, d_ff, dropout)
+
+    batch_size = 2
+    seq_len = 10 
+    x = torch.rand(batch_size, seq_len, d_model)
+
+    out = net(x)
+
+    # An example of loss function
+    loss = out.sum()
+    loss.backward()
+
+    for name, para in net.named_parameters():
+        assert para.grad is not None, f"No gradients for: {name}"
+        assert not torch.isnan(para.grad).any(), f"NaNs in gradients for: {name}"
+        assert not torch.isinf(para.grad).any(), f"Inf in gradients for: {name}"
