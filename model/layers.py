@@ -17,12 +17,17 @@ class EmbeddingBlock(nn.Module):
 
     max_len: int 
         Maximum sequence length admitted.
+
+    dropout: float
+        Probability of applying dropout to the tokens embedding and
+        positional encoding sum. Default is 0.1.
     """
-    def __init__(self, d_model: int, vocab_size: int, max_len: int):
+    def __init__(self, d_model: int, vocab_size: int, max_len: int, dropout = 0.1):
         super().__init__()
         self.d_model = d_model 
         self.vocab_size = vocab_size
         self.max_len = max_len
+        self.dropout = nn.Dropout(dropout)
 
         self.token_embedding = nn.Embedding(num_embeddings = self.vocab_size, embedding_dim = self.d_model)
         self.positional_encoding = nn.Embedding(num_embeddings = self.max_len, embedding_dim = self.d_model)   # Learnable Positional Encoding. In the original transformer paper: Sinusoidal and constant.
@@ -34,16 +39,18 @@ class EmbeddingBlock(nn.Module):
         Parameters
         ----------
         x: torch.Tensor
-            Input to be embedded
+            Input to be embedded.
 
         Returns
         -------
         torch.Tensor
-            The tokenized sentence embeddings
+            The tokenized sentence embeddings.
         """
         seq_len = x.size(1)
         pos_ids = torch.arange(start = 0, end = seq_len, device = x.device).unsqueeze(0)
-        return self.token_embedding(x) + self.positional_encoding(pos_ids)
+        output = self.dropout(self.token_embedding(x) + self.positional_encoding(pos_ids))
+
+        return output
 
 
 
@@ -108,13 +115,15 @@ class MultiHeadAttention(nn.Module):
 
     dropout: float
         Probability of applying dropout to an artificial neuron.
+        Defaul is 0.1.
     """
 
     
-    def __init__(self, d_model: int, heads: int, dropout: float):
+    def __init__(self, d_model: int, heads: int, dropout = 0.1):
         super().__init__()
         self.d_model = d_model
         self.heads = heads
+        self.dropout = nn.Dropout(dropout)
 
         if d_model % heads != 0:
             raise ValueError("The model dimension, d_model, must be divisible by the number of attention heads.")
@@ -152,22 +161,17 @@ class MultiHeadAttention(nn.Module):
         Returns
         -------
         torch.Tensor
-            Attention output of shape (batch_size, seq_len, d_model).
+            Attention output of shape (batch_size, num_heads, seq_len, d_model).
         """
 
-        batch_size = Q.size(0)
-        scores = Q @ K.transpose(-2, -1) / math.sqrt(self.d_k)
+        scores = Q @ K.transpose(-2, -1) / math.sqrt(self.d_k) # (batch_size, num_heads, seq_len, seq_len)
 
         if mask is not None:
             scores = scores.masked_fill(mask == 0, float('-inf'))
 
-        attention = F.softmax(scores, dim = -1) @ V
+        attention = F.softmax(scores, dim = -1) @ V # (batch_size, num_heads, seq_len, d_model)
 
-        #Finally we concat the attention heads results
-        attn_output = attention.transpose(1, 2).contiguous()
-        attn_output = attn_output.view(batch_size, -1, self.d_model)
-
-        return attn_output
+        return attention
     
 
     def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, mask):
@@ -195,20 +199,31 @@ class MultiHeadAttention(nn.Module):
             Attention output of shape (batch_size, seq_len, d_model).
         """
         batch_size = q.size(0)
+        seq_length = q.size(1)
 
         # Linear projections
-        Q = self.w_q(q)
-        K = self.w_k(k)
-        V = self.w_v(v)
+        Q = self.w_q(q) # (batch_size, seq_length, d_model)
+        K = self.w_k(k) # (batch_size, seq_length, d_model)
+        V = self.w_v(v) # (batch_size, seq_length, d_model)
 
-        # We group the tensors by heads to use each independent position
-        Q = Q.view(batch_size, -1, self.num_heads, self.d_k).transpose(1, 2)
-        K = K.view(batch_size, -1, self.num_heads, self.d_k).transpose(1, 2)
-        V = V.view(batch_size, -1, self.num_heads, self.d_k).transpose(1, 2)
+        # We group the tensors by heads to use each independent position.
 
-        attn = self.attention(self, Q, K, V, mask)
+        # The combination view + transpose needs to be done because of the row-major
+        # PyTorch order when torch.view().
+
+        Q = Q.view(batch_size, -1, self.heads, self.d_k).transpose(1, 2) # (batch_size, num_heads, seq_len, d_k)
+        K = K.view(batch_size, -1, self.heads, self.d_k).transpose(1, 2) # (batch_size, num_heads, seq_len, d_k)
+        V = V.view(batch_size, -1, self.heads, self.d_k).transpose(1, 2) # (batch_size, num_heads, seq_len, d_k)
+
+        attn_output = self.attention(Q, K, V, mask)
+
+        #Finally we concat the attention heads results
+        attention = attn_output.transpose(1, 2).contiguous()
+        attention = attention.view(batch_size, -1, self.d_model)
+
+        attention = self.dropout(attention)
  
-        return self.w_o(attn)
+        return self.w_o(attention)   # (batch_size, sequence_len, d_model)
     
 
 
@@ -223,6 +238,7 @@ class LayerNorm(nn.Module):
 
     eps: float 
         Avoids dividing by 0 in the Normalization step.
+        Default is 10^-6.
     """ 
 
     def __init__(self, d_model: int, eps = 10**-6):
@@ -270,6 +286,7 @@ class ResidualConnection(nn.Module):
 
         eps: float 
             Avoids dividing by 0 in the Normalization step.
+            Default is 10^-6.
         """
 
         def __init__(self, d_model: int, eps = 10**-6):
