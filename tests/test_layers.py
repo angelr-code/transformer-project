@@ -1,6 +1,6 @@
 import pytest
 import torch 
-from model.layers import EmbeddingBlock, FeedForward, MultiHeadAttention, ResidualConnection, LayerNorm
+from model.layers import EmbeddingBlock, FeedForward, MultiHeadAttention, ResidualConnection, EncoderLayer, DecoderLayer
 
 # Embedding Block tests
 
@@ -291,3 +291,47 @@ def test_multi_head_attention_determinism():
     out2 = attention_block(x, x, x, mask = None)
 
     assert torch.allclose(out1, out2), "The attention block is not being deterministic."
+
+
+# Tests Encoder and Decoder Layers 
+
+def test_encoder_output_shape():
+    """
+    Tests that the Encoder layer returns the correct output shape 
+    given an input tensor.
+    """
+
+    d_model = 64
+    d_ff = 128
+    heads = 4
+    encoder = EncoderLayer(d_model, d_ff, heads)
+
+    batch_size = 2
+    seq_len = 10
+    x = torch.rand(batch_size, seq_len, d_model)
+
+    out = encoder(x)
+
+    assert out.shape == (batch_size, seq_len, d_model)
+
+
+def test_decoder_output_shape():
+    """
+    Tests that the Decoder layer returns the correct output shape 
+    given an input tensor.
+    """
+
+    d_model = 64
+    d_ff = 128
+    heads = 4
+    decoder = DecoderLayer(d_model, d_ff, heads)
+
+    batch_size = 2
+    seq_len = 10
+    x = torch.rand(batch_size, seq_len, d_model)
+    x_encoder = torch.rand(batch_size, seq_len, d_model)
+    mask = torch.ones(batch_size, heads, seq_len, seq_len).bool()
+
+    out = decoder(x, x_encoder, mask)
+
+    assert out.shape == (batch_size, seq_len, d_model)

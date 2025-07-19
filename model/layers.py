@@ -69,8 +69,9 @@ class FeedForward(nn.Module):
 
     dropout: float
         Probability of applying dropout to an artificial neuron.
+        Default is 0.1.
     """
-    def __init__(self, d_model: int, d_ff: int, dropout: float):
+    def __init__(self, d_model: int, d_ff: int, dropout = 0.1):
         super().__init__()
 
         layers = []
@@ -115,7 +116,7 @@ class MultiHeadAttention(nn.Module):
 
     dropout: float
         Probability of applying dropout to an artificial neuron.
-        Defaul is 0.1.
+        Default is 0.1.
     """
 
     
@@ -199,7 +200,6 @@ class MultiHeadAttention(nn.Module):
             Attention output of shape (batch_size, seq_len, d_model).
         """
         batch_size = q.size(0)
-        seq_length = q.size(1)
 
         # Linear projections
         Q = self.w_q(q) # (batch_size, seq_length, d_model)
@@ -316,6 +316,28 @@ class ResidualConnection(nn.Module):
         
 
 class EncoderLayer(nn.Module):
+    """
+    Generates a full encoder layer with the previously defined blocks.
+
+    Parameters 
+    ----------
+   d_model: int
+        Output dimensions of the model sub-layers and embedding.
+
+    d_ff: int
+        Hidden layer dimension.
+    
+    heads: int
+        Number of attention heads.
+
+    dropout: float
+        Probability of applying dropout to an artificial neuron.
+        Default is 0.1.
+
+    eps: float 
+        Avoids dividing by 0 in the Normalization step.
+        Default is 10^-6.
+    """
     def __init__(self, d_model: int, d_ff:int, heads: int, dropout = 0.1, eps = 10**-6):
         super().__init__()
         self.mha = MultiHeadAttention(d_model, heads)
@@ -323,7 +345,40 @@ class EncoderLayer(nn.Module):
         self.feed_forward = FeedForward(d_model, d_ff, dropout)
 
     def forward(self, x: torch.Tensor, mask = None):
+        """
+        Computes the output of the encoder layer.
+
+        Parameters
+        ----------
+        x: torch.Tensor
+            Input tensor.
+
+        mask : torch.Tensor or None
+            Optional mask tensor to prevent attention to certain positions.
+            Should be broadcastable to (batch_size, num_heads, seq_len, seq_len).
+            In the Encoder layer default is None.
+
+        Returns
+        -------
+        torch.Tensor
+            Encoder output tensor.
+        """
         x = self.residual_connections[0](x, lambda x: self.mha(x, x, x, mask))
         x = self.residual_connections[1](x, self.feed_forward)
         
+        return x
+
+
+class DecoderLayer(nn.Module):
+    def __init__(self, d_model: int, d_ff:int, heads: int, dropout = 0.1, eps = 10**-6):
+        super().__init__()
+        self.mha = MultiHeadAttention(d_model, heads, dropout)
+        self.feed_forward = FeedForward(d_model, d_ff, dropout)
+        self.residual_connections = nn.ModuleList([ResidualConnection(d_model, eps) for _ in range(3)])
+
+    def forward(self, x: torch.Tensor, x_encoder: torch.Tensor, tgt_mask, memory_mask = None):
+        x = self.residual_connections[0](x, lambda x: self.mha(x,x,x,tgt_mask))
+        x = self.residual_connections[1](x, lambda x: self.mha(x_encoder, x_encoder, x, memory_mask))
+        x = self.residual_connections[2](x, self.feed_forward)
+
         return x
